@@ -1,0 +1,52 @@
+{
+  "actorSpecification": 1,
+  "name": "gumtree-au-scraper",
+  "title": "Gumtree Australia Scraper",
+  "description": "Scrape gumtree.com.au search results and categories into a clean dataset: title, price, location, posting date, image, category, and Wanted / free / swap / promoted flags.",
+  "version": "0.1",
+  "buildTag": "latest",
+  "meta": {
+    "templateId": "python-playwright"
+  },
+  "input": "./input_schema.json",
+  "dockerfile": "./Dockerfile",
+  "readme": "../README.md",
+  "storages": {
+    "dataset": {
+      "actorSpecification": 1,
+      "title": "Gumtree listings",
+      "views": {
+        "overview": {
+          "title": "Overview",
+          "transformation": {
+            "fields": [
+              "imageUrl",
+              "title",
+              "price",
+              "priceText",
+              "location",
+              "postedAt",
+              "kind",
+              "isPromoted",
+              "url"
+            ]
+          },
+          "display": {
+            "component": "table",
+            "properties": {
+              "imageUrl": { "label": "Image", "format": "image" },
+              "title": { "label": "Title", "format": "text" },
+              "price": { "label": "Price (AUD)", "format": "number" },
+              "priceText": { "label": "Price text", "format": "text" },
+              "location": { "label": "Location", "format": "text" },
+              "postedAt": { "label": "Posted", "format": "text" },
+              "kind": { "label": "Kind", "format": "text" },
+              "isPromoted": { "label": "Promoted", "format": "boolean" },
+              "url": { "label": "Listing", "format": "link" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

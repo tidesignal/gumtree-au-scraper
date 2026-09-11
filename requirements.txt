@@ -1,0 +1,8 @@
+# Runtime
+apify<5.0.0
+crawlee[playwright]<2.0.0
+beautifulsoup4>=4.12,<5
+tzdata>=2024.1
+
+# Tests (not needed inside the Actor image, harmless there)
+pytest>=8

@@ -1,0 +1,21 @@
+# Apify local storage (datasets, request queues, INPUT.json written by `apify run`)
+storage/
+apify_storage/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Local env / secrets (never commit tokens)
+.env
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

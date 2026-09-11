@@ -1,0 +1,107 @@
+{
+  "title": "Gumtree Australia Scraper input",
+  "description": "Give the scraper either ready-made gumtree.com.au search URLs, or a keyword with optional location and category. Every listing card on the result pages becomes one dataset row.",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "searchUrls": {
+      "title": "Gumtree search URLs",
+      "type": "array",
+      "description": "Any gumtree.com.au search, category or location result page, copied from the address bar. Examples: `https://www.gumtree.com.au/s-rtx+4070/k0` (keyword), `https://www.gumtree.com.au/s-sydney/exercise+bike/k0l3003435` (keyword in a region), `https://www.gumtree.com.au/s-components/c18552` (category), `https://www.gumtree.com.au/s-components/c18552?ad=wanted` (only Wanted ads). Filters and sort order in the URL are respected. Takes priority over the keyword fields below when both are given.",
+      "editor": "requestListSources",
+      "prefill": [
+        { "url": "https://www.gumtree.com.au/s-rtx+4070/k0" }
+      ]
+    },
+    "keyword": {
+      "title": "Keyword",
+      "type": "string",
+      "description": "Search phrase, e.g. `exercise bike`. Used only when no search URLs are given.",
+      "editor": "textfield"
+    },
+    "location": {
+      "title": "Location",
+      "type": "string",
+      "description": "Gumtree location ID: the number after `l` at the end of any gumtree.com.au result URL (`.../k0l3003435` is Sydney Region). `sydney` is accepted as a shortcut. Leave empty to search all of Australia.",
+      "editor": "textfield"
+    },
+    "category": {
+      "title": "Category",
+      "type": "string",
+      "description": "Gumtree category ID: the number after `c` in a category URL (`/s-components/c18552` is Components). Leave empty to search all categories.",
+      "editor": "textfield"
+    },
+    "adType": {
+      "title": "Ad type",
+      "type": "string",
+      "description": "Offering = people selling, Wanted = people looking to buy (Gumtree's own filter, `?ad=wanted`). Rows always carry an `isWanted` flag regardless of this setting.",
+      "editor": "select",
+      "enum": ["all", "offering", "wanted"],
+      "enumTitles": ["All ads", "Offering only", "Wanted only"],
+      "default": "all"
+    },
+    "sortBy": {
+      "title": "Sort order",
+      "type": "string",
+      "description": "Gumtree's own sort options (`?sort=`). Use `Most recent` for change tracking, `Cheapest` for price research.",
+      "editor": "select",
+      "enum": ["rank", "date", "price_asc", "price_desc"],
+      "enumTitles": ["Best match", "Most recent", "Cheapest first", "Most expensive first"],
+      "default": "rank"
+    },
+    "maxItems": {
+      "title": "Maximum listings",
+      "type": "integer",
+      "description": "Stop after this many unique listings in total (across all start URLs). Gumtree shows 24 listings per page, so 100 items is about 5 page loads.",
+      "editor": "number",
+      "default": 100,
+      "minimum": 1,
+      "maximum": 10000,
+      "unit": "listings"
+    },
+    "includeDescription": {
+      "title": "Fetch full description",
+      "type": "boolean",
+      "description": "Open every listing page to add the full `description`, `condition`, `postcode` and `sellerType`. Costs one extra page load per listing, so it is roughly 25x slower than result pages alone. Off by default; the result-page `snippet` (first ~500 characters) is always included.",
+      "editor": "checkbox",
+      "default": false
+    },
+    "proxyConfiguration": {
+      "title": "Proxy configuration",
+      "type": "object",
+      "description": "gumtree.com.au sits behind bot mitigation (Peakhour) that refuses datacenter and headless-browser traffic. Apify residential proxies with country set to Australia are the tested configuration. Running with no proxy works from a residential Australian connection only.",
+      "editor": "proxy",
+      "default": { "useApifyProxy": true, "apifyProxyGroups": ["RESIDENTIAL"], "apifyProxyCountry": "AU" },
+      "prefill": { "useApifyProxy": true, "apifyProxyGroups": ["RESIDENTIAL"], "apifyProxyCountry": "AU" }
+    },
+    "maxRetries": {
+      "title": "Retries per page",
+      "type": "integer",
+      "description": "How many times a blocked or failed page is retried with a fresh proxy session before it is given up.",
+      "editor": "number",
+      "default": 3,
+      "minimum": 0,
+      "maximum": 10,
+      "sectionCaption": "Advanced"
+    },
+    "requestDelaySecs": {
+      "title": "Delay between page loads (seconds)",
+      "type": "number",
+      "description": "Politeness pause before each page load, randomised between 50% and 150% of this value. Raise it if you see 429 responses.",
+      "editor": "number",
+      "default": 2,
+      "minimum": 0,
+      "maximum": 60
+    },
+    "pageTimeoutSecs": {
+      "title": "Page timeout (seconds)",
+      "type": "integer",
+      "description": "Maximum time to wait for a result page to load and render its listing data.",
+      "editor": "number",
+      "default": 60,
+      "minimum": 10,
+      "maximum": 300
+    }
+  },
+  "required": []
+}
