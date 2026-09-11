@@ -15,7 +15,7 @@ Console -> **Actors** -> **Development** -> **Create new** (button top right) ->
 
 - Git URL: `https://github.com/tidesignal/gumtree-au-scraper`
 - Branch: `main`, build tag `latest` (defaults)
-- Actor name is read from `.actor/actor.json` (`gumtree-au-scraper`), title "Gumtree Australia Scraper".
+- Actor name is read from `.actor/actor.json` (`gumtree-au-scraper`), title "Gumtree Australia Scraper – Listings & Prices to CSV/JSON".
 - If Console asks for a folder, leave it blank (the Dockerfile is at `.actor/Dockerfile`, which is the standard location).
 - **Source** tab -> **Build**. The build installs `requirements.txt` on `apify/actor-python-playwright:3.13`. Expect 3-5 minutes the first time.
 - Optional but recommended: Source -> "Automatic builds on push" (GitHub webhook) so `main` rebuilds itself.
@@ -32,13 +32,23 @@ Run once more with `includeDescription: true` and `maxItems: 5`; check `descript
 
 Actor -> **Publication** tab -> **Publish to Store**:
 
+Field values below match `.actor/actor.json` (title, description) and the buyer-term
+research in `docs/seo-notes.md`. Change them together.
+
 | Field | Value |
 | --- | --- |
-| Title | `Gumtree Australia Scraper` |
-| SEO title (<= 60 chars) | `Gumtree Australia Scraper - listings, prices, locations` |
-| SEO description (<= 160 chars) | `Scrape gumtree.com.au search and category pages into a dataset: title, price as a number, suburb, posting date, image, Wanted/free/swap flags. AU only.` |
-| Description (short, Store card) | `Scrape gumtree.com.au search results and categories into a clean dataset: title, price, location, posting date, image, category, and Wanted / free / swap / promoted flags.` |
-| Categories | `E-commerce` (primary), `Automation` |
+| Title (57 chars) | `Gumtree Australia Scraper – Listings & Prices to CSV/JSON` |
+| SEO title (<= 60 chars, 57) | `Gumtree Australia Scraper – Listings & Prices to CSV/JSON` |
+| SEO description (<= 160 chars, 150) | `Scrape gumtree.com.au listings to CSV/JSON/Excel: title, numeric price, suburb and state, posting date, image, Wanted/free/swap flags. Australia only.` |
+| Description (short, Store card, 150) | same as the SEO description |
+| Categories | `E-commerce`, `Automation` |
+
+Categories: both Store leaders with more than 100 users (`memo23/gumtree-cheerio`,
+`sync-network/gumtree-com-listing-scraper`) are in Automation + E-commerce, and
+across the 46 Gumtree actors the counts are E-commerce 33, Automation 25, Lead
+generation 20, Real estate 11. Real estate is used by actors that expose property
+attributes (beds/baths); this actor has none, so it is not claimed. Do not add Lead
+generation either: the copy promises no seller identity or contact fields.
 | Icon | 512x512 PNG; a plain wave/tide mark on white. Not the Gumtree logo. |
 | README | pulled from `README.md` in the repo; check the preview renders the tables |
 | Repository URL | `https://github.com/tidesignal/gumtree-au-scraper` |

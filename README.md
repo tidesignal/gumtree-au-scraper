@@ -1,10 +1,23 @@
-# Gumtree Australia Scraper
+# Gumtree Australia Scraper: gumtree.com.au listings, prices and locations to CSV/JSON
 
-Turn any **gumtree.com.au** search, category or location page into a clean dataset: one row per listing with title, price as a number, suburb/state, posting date, image, category and the flags that matter when you use classifieds as market data (Wanted, free, swap, promoted).
+Turn any **gumtree.com.au** search, category or location page into a dataset you can download as CSV, JSON or Excel: one row per listing with the title, the price as a number, suburb and state, posting date, image, category and the flags you need before you treat a classified ad as a price (Wanted, free, swap, faulty, bundle, promoted). Paste a Gumtree URL or give a keyword, set how many listings you want, run.
 
-Australia only. Not affiliated with Gumtree.
+Australia only (gumtree.com.au). Not affiliated with Gumtree.
 
-## What you get
+## Why this one
+
+There are about forty Gumtree scrapers in the Store; nearly all of them are built for the UK site. This one differs in ways you can check in the code:
+
+- **Australia only, on purpose.** gumtree.com.au has different markup, categories and bot mitigation from gumtree.com (UK). The input validator rejects non-`.com.au` URLs instead of producing empty or wrong rows.
+- **Reads the page's own JSON, not the markup.** Gumtree renders result pages from `window.APP_DATA`; the scraper parses that first, then the `__NEXT_DATA__` blob of the Next.js variant Gumtree A/B-serves, and only falls back to the HTML cards if neither is present. Fewer things break when the CSS changes.
+- **Gumtree's Peakhour challenge is handled.** A plain HTTP client with a real browser's TLS fingerprint tries first (cheap, no Chromium); if Gumtree answers with its JavaScript challenge, headless Chromium solves it and carries on. Through Apify residential AU proxies that is the normal path, and the log tells you which one ran.
+- **Wanted / swap / free / faulty / bundle classification.** A "Wanted: RTX 4070, $4,000" ad, a "parts only" card and a "CPU + board + RAM combo" all have a price and all match your search; none of them tells you what the item sells for. Each row gets `kind` and `priceable` so you can filter in one step.
+- **No silent empty runs.** If every page was blocked or nothing could be parsed, the run fails and says why. Only Gumtree's own "0 results" finishes with an empty dataset. A diffing job downstream never sees "everything sold" by mistake.
+- **Numeric price, ISO timestamp, split location.** `price` is a number in AUD, `postedAtIso` is a Sydney-time timestamp derived from "8 hours ago", `suburb` / `area` / `state` are separate columns.
+
+What it does **not** do: seller names, phone numbers, seller ratings or GPS coordinates. It reads the public listing card and, optionally, the public description page.
+
+## Output fields
 
 | Field | Example | Notes |
 | --- | --- | --- |
@@ -31,8 +44,6 @@ Australia only. Not affiliated with Gumtree.
 | `searchUrl`, `page`, `scrapedAt` | | Provenance |
 
 With **Fetch full description** on, each row also gets `description` (full text with line breaks), `condition` (New/Used), `postcode`, `categoryName`, `listingStatus`, and `sellerType` becomes `private` / `business` / `dealer`.
-
-`kind` and `priceable` exist because a "Wanted: RTX 4070, $4,000" ad, a "parts only" card and a "CPU + motherboard + RAM combo" all have a price and all look like the thing you searched for, yet none of them tells you what that thing sells for. They stay in the output, flagged, so you can decide.
 
 ## Input
 
@@ -65,8 +76,8 @@ or
 - **keyword / category / location**: `category` is the number after `c` in a category URL (`/s-components/c18552`), `location` is the number after `l` at the end of a result URL (`.../k0l3003435` = Sydney Region; `sydney` is accepted as a shortcut). Unknown location names are rejected rather than guessed.
 - **maxItems**: total unique listings across all start URLs. Gumtree pages hold 24 listings, so the default of 24 is one page: a cheap first run. Raise it once the output looks right.
 - **includeDescription**: opens every listing page (one extra page load per row).
-- **fetchMode**: `auto` (default), `http` or `browser`. See "Fetch modes" below.
-- **proxyConfiguration**: see "Proxies" below.
+- **fetchMode**: `auto` (default), `http` or `browser`. See "How it works" below.
+- **proxyConfiguration**: Apify residential proxies, country AU, is the tested setting.
 - **httpProfiles** (advanced): override the ladder of browser fingerprints the HTTP client impersonates, e.g. `["safari18_0", "chrome124/http1.1"]`.
 
 ## Output example
@@ -108,90 +119,92 @@ or
 }
 ```
 
+Download the dataset from the run's **Storage** tab as CSV, JSON, Excel or XML, or pull it through the API.
+
+## Pricing
+
+Pay per result: **$1.50 per 1,000 listings** plus **$0.01 per run start**, platform usage included (see the Pricing tab for the current figures). A default first run (24 listings) costs a few cents. `includeDescription` is not charged extra, but it loads one page per listing, so it is slower. To cap spend, set *Run options -> Max cost per run* before starting.
+
 ## Use cases
 
-- **Used-market price research**: run the same search daily, keep only `priceable` rows, and you have a real asking-price series for a GPU, a bike, a fridge. Listings that disappear are your best proxy for what actually sold.
-- **Resale arbitrage**: sort by `price_asc`, filter `kind == "item"` and `condition`, compare against retail.
-- **Lead generation for movers, cleaners and tradies**: "moving sale", "must go this weekend", furniture in a suburb: the `location`/`postedAtIso` fields let you act on fresh ads only. Only contact people through Gumtree itself.
-- **Academic / market studies**: category-wide pulls with `isPromoted`, `sellerType`, `state` for second-hand market research.
-- **Wanted-side demand**: `adType: "wanted"` gives you what people are trying to buy and what they offer.
+- **Gumtree price history.** Gumtree does not show what an item used to list for. Run the same search on a schedule, keep the `priceable` rows, and you have a real asking-price series for a GPU, a bike, a fridge. Listings that stop appearing are your best proxy for what sold.
+- **Resale sourcing.** Sort by `price_asc`, filter `kind == "item"` and `condition`, compare against retail.
+- **Local leads for movers, cleaners and tradies.** "moving sale", "must go this weekend", furniture in a suburb: `location` and `postedAtIso` let you act on fresh ads only. Contact people only through Gumtree itself.
+- **Second-hand market research.** Category-wide pulls with `isPromoted`, `sellerType`, `state`.
+- **Demand side.** `adType: "wanted"` gives you what people are trying to buy and what they offer.
 
-## How it works
+## How to scrape Gumtree: how it works
 
-By default no browser is involved. A plain HTTP client (`curl_cffi`) that presents the TLS and HTTP/2 fingerprint of a real browser fetches each result page and reads the JSON the page is rendered from (`window.APP_DATA.search.results`), which is more stable than the markup. Gumtree also A/B-serves a second implementation of the same page (Next.js, `__NEXT_DATA__`); that is read too. If neither blob is present, the rendered cards are parsed. Pagination follows Gumtree's own next-page link until `maxItems` is reached or the last page is hit. Rows are de-duplicated by listing id across pages and start URLs. One HTTP session (cookie jar + proxy session + fingerprint profile) is kept for the whole run and rotated only when Gumtree blocks it.
+By default no browser is involved. A plain HTTP client (`curl_cffi`) that presents the TLS and HTTP/2 fingerprint of a real browser fetches each result page and reads the JSON the page is rendered from (`window.APP_DATA.search.results`). Gumtree also A/B-serves a Next.js implementation of the same page (`__NEXT_DATA__`, 40 listings per page); that is read too. If neither blob is present, the rendered cards are parsed. Pagination follows Gumtree's own next-page link until `maxItems` is reached or the last page is hit. Rows are de-duplicated by listing id across pages and start URLs. One HTTP session (cookie jar, proxy session, fingerprint profile) is kept for the whole run and rotated only when Gumtree blocks it.
 
 ### Fetch modes
 
 | `fetchMode` | What happens | When to use |
 | --- | --- | --- |
-| `auto` (default) | One plain-HTTP attempt. If Gumtree answers with its JavaScript challenge, headless Chromium loads that same page, solves the challenge and parses it; the browser's cookies are then offered to the HTTP client once, and if Gumtree challenges them again (it does, see below) the rest of the run stays in the browser. | Always, unless you are debugging. |
-| `http` | HTTP client only (`curl_cffi`, browser fingerprint impersonation). No Chromium: a page takes well under a second and costs a few hundred KB. Fails on pages that demand the challenge. | Connections Gumtree trusts (a home line in Australia); scheduled runs where you know HTTP works. |
+| `auto` (default) | One plain-HTTP attempt. If Gumtree answers with its JavaScript challenge, headless Chromium loads that same page, solves the challenge and parses it; the browser's cookies are offered to the HTTP client once, and if Gumtree challenges them again (it does, see below) the rest of the run stays in the browser. | Always, unless you are debugging. |
+| `http` | HTTP client only. No Chromium: a page takes well under a second and a few hundred KB. Fails on pages that demand the challenge. | Connections Gumtree trusts (a home line in Australia); scheduled runs where you know HTTP works. |
 | `browser` | Headless Chromium (Playwright) for every page. A new session is challenged once (about a second); about 1 GB of memory. | Through proxies; or if `http` stops working after a change on Gumtree's side. |
 
-### What Gumtree's bot mitigation does, and how each mode deals with it
+### Gumtree's bot mitigation
 
-gumtree.com.au sits behind Peakhour. What it answers depends on the *client fingerprint* and the *IP reputation* (all measured 2026-09-12):
+gumtree.com.au sits behind Peakhour. What it answers depends on the client fingerprint and the IP reputation (measured 2026-09-12):
 
-- From a Sydney residential IP, plain `curl_cffi` requests impersonating Safari 18 / Chrome 124 / Chrome 120 get the page straight away, while the newest Chrome profiles and headless Chromium are refused. The HTTP client therefore tries a ladder of fingerprint profiles (`safari18_0` over HTTP/2, `chrome124` over HTTP/1.1, `chrome120`, `safari15_5`), rotating profile, cookie jar and proxy session whenever a response is a challenge (`peakhour-challenge: 1`), a hard block (`peakhour-error: blocked`, empty body) or a 429.
-- Through Apify residential proxies (country AU), every one of those profiles gets the **JavaScript challenge** instead: a 31 KB obfuscated page that computes a proof-of-work, fingerprints the browser (WebGL, canvas, navigator) and POSTs the answer back. Only a real browser can answer it. Headless Chromium does, in 0.6-1 s, provided its client hints are consistent with its binary (the scraper overrides the `HeadlessChrome` marker via CDP; with the stock headless UA Peakhour does not even offer the challenge). A 403 is therefore *not* treated as a failure in the browser: the page is given up to 20 s to turn into real content, and only then judged.
-- The cookie a browser earns (`__rp_ch`) is bound to the TLS fingerprint that solved the challenge and to the page: handing it, together with the browser's exact User-Agent, to `curl_cffi` was challenged again on the very next request in every test. Inside the browser the cookie does carry: after one solved challenge the following pages of the same session (page 2, listing pages) loaded without a new one. `auto` still makes that one-request HTTP attempt in case the binding changes, then stays in the browser.
+- From a Sydney residential IP, `curl_cffi` requests impersonating Safari 18 / Chrome 124 / Chrome 120 get the page straight away; the newest Chrome profiles and headless Chromium are refused. The HTTP client therefore tries a ladder of profiles (`safari18_0` over HTTP/2, `chrome124` over HTTP/1.1, `chrome120`, `safari15_5`), rotating profile, cookie jar and proxy session whenever a response is a challenge (`peakhour-challenge: 1`), a hard block (`peakhour-error: blocked`) or a 429.
+- Through Apify residential proxies (country AU), every one of those profiles gets the **JavaScript challenge**: a 31 KB page that computes a proof-of-work, fingerprints the browser and POSTs the answer back. Only a real browser can answer it. Headless Chromium does, in 0.6-1 s, provided its client hints match its binary (the scraper overrides the `HeadlessChrome` marker via CDP). A 403 is therefore not treated as a failure in the browser: the page is given up to 20 s to turn into real content, then judged.
+- The cookie the browser earns (`__rp_ch`) is bound to the TLS fingerprint that solved the challenge: handing it to `curl_cffi` was challenged again on the next request in every test. Inside the browser it carries: page 2 and listing pages of the same session load without a new challenge.
 
 Practical consequence: **on the Apify platform expect the browser to do the work** (about a second per page plus Chromium's memory); from a trusted connection the HTTP path does it for a fraction of the cost. The log says which happened (`Page 1 (app_data, http safari18_0/h2 ...)` vs `Peakhour challenge solved in the browser` and `Page 1 (app_data, browser, HTTP 403) ...`).
 
-Selectors and data sources verified on 2026-09-11 against live pages ("rtx 4070", "exercise bike" in Sydney Region, the Components category, and a Wanted-only category page):
+### Selectors and data sources
+
+Verified 2026-09-11 against live pages ("rtx 4070", "exercise bike" in Sydney Region, the Components category, a Wanted-only category page):
 
 - Listing card: `a.user-ad-row-new-design` (`id="user-ad-<id>"`, `href="/web/listing/<category>/<id>"`)
-- Title `.user-ad-row-new-design__title-span`, price `.user-ad-price-new-design__price` (also shows `Swap/Trade`), negotiable badge `.user-ad-price-new-design__negotiable-label`, location `.user-ad-row-new-design__location` ("Dural, NSW"), date `.user-ad-row-new-design__age` ("8 hours ago", "Yesterday", "09/09/2026"), snippet `.user-ad-row-new-design__description-text`
+- Title `.user-ad-row-new-design__title-span`, price `.user-ad-price-new-design__price` (also shows `Swap/Trade`), negotiable badge `.user-ad-price-new-design__negotiable-label`, location `.user-ad-row-new-design__location`, date `.user-ad-row-new-design__age` ("8 hours ago", "Yesterday", "09/09/2026"), snippet `.user-ad-row-new-design__description-text`
 - Sponsored blocks: `div.fuse-ads` siblings between cards (never matched by the card selector)
 - Next page: `a.page-number-navigation__link-next`; result count `h1.breadcrumbs__summary--enhanced`
 - Listing page (`includeDescription`): JSON-LD `Product` block and `__NEXT_DATA__` -> `props.pageProps.vipData.data`
 - URL grammar: `/s-<keyword>/k0`, `/s-<slug>/c<categoryId>`, `/s-<slug>/l<locationId>`, `/s-<slug>/<slug>/<keyword>/k0c<cat>l<loc>`, `?sort=date|rank|price_asc|price_desc`, `?ad=offering|wanted`, `?price-type=free`
 
-**The scraper refuses to finish successfully with an empty dataset.** If pages load but no listing can be parsed, or every request was blocked, the run fails with a message saying so. A genuine "0 results" search (Gumtree's own `zeroSearchResults`) finishes normally with no rows. Silent empty output would look like "everything sold" to any diffing job downstream, so it is treated as an error on purpose.
+### Empty-result guard
+
+The scraper refuses to finish successfully with an empty dataset. If pages load but no listing can be parsed, or every request was blocked, the run fails with a message saying which. A genuine "0 results" search (Gumtree's own `zeroSearchResults`) finishes normally with no rows.
 
 ## Proxies
 
-gumtree.com.au sits behind bot mitigation (Peakhour) that fingerprints the TLS/HTTP client. The default HTTP client passes that check, so the proxy only has to look like an ordinary Australian connection: the default input uses **Apify residential proxies, country AU**, and a fresh proxy session is taken whenever a page comes back blocked. Datacenter proxies and non-AU exits are more likely to be refused. Running with no proxy works from a residential Australian connection (that is how the scraper was developed).
-
-What was measured (2026-09-12, Sydney residential connection, fresh session per request, a search page and a listing page):
-
-| Client | Result |
-| --- | --- |
-| Headless Chromium (Playwright), also via Apify residential AU proxy | HTTP 403 on every request |
-| `curl_cffi` impersonating Chrome 146 / 136 / 131, Edge, Firefox, Safari 26 | HTTP 403 with a Peakhour JavaScript challenge or an empty "blocked" body |
-| `curl_cffi` impersonating Safari 18.0 (HTTP/2 or HTTP/1.1), Chrome 124 (HTTP/1.1 only), Chrome 120, Safari 15.5 | HTTP 200, real page with listing data |
-| Any of the above through an Apify residential AU proxy (platform run, same day) | HTTP 403 with the JavaScript challenge, every profile |
-| Headless Chromium with consistent client hints, no proxy | Challenge served and solved in 0.6-1 s, real page follows |
-| Headless Chromium with consistent client hints, through the proxy | Not yet measured (no proxy available locally); expected to be served the challenge and to solve it |
-
-Peakhour's fingerprint database moves; if every profile on the ladder starts failing, the run reports it (see "Why did my run fail" below) and `fetchMode: "browser"` is the stop-gap while the ladder is updated.
-
-## Performance and cost
-
-One page fetch per 24 listings; a 100-listing run is 5 result pages. `includeDescription` adds one page per listing. Pages are fetched one at a time with a randomised pause between them to stay under Gumtree's rate limits; raise `requestDelaySecs` if you see 429s.
-
-Keeping a first run cheap:
-
-- `maxItems` defaults to **24** (one page). A default run costs one Actor start plus 24 results plus about 0.5 MB of residential proxy traffic.
-- Set a **maximum cost per run** in the run options (Console: *Run options -> Max cost per run*; API: `maxTotalChargeUsd`). The platform stops the run when the cap is reached, whatever the input says; `$0.10` is plenty for a 24-item test and `$1` covers roughly 500 listings. The scraper itself does not need to know the cap.
-- `fetchMode: "http"` (or the default `auto`, which is HTTP unless challenged) uses no browser, so compute is a few seconds per run instead of a Chromium process for the whole run. Through a proxy the browser normally takes over (see "Fetch modes"); it loads pages one at a time, blocks images/fonts/media to keep proxy traffic down, and needs about a second per challenge (one per browser session).
+The default input uses **Apify residential proxies, country AU**; a fresh proxy session is taken whenever a page comes back blocked. Datacenter proxies and non-AU exits are more likely to be refused. Running with no proxy works from a residential Australian connection (that is how the scraper was developed). Pages are fetched one at a time with a randomised pause (`requestDelaySecs`, default 2 s); raise it if you see 429s.
 
 ## FAQ
 
-**Can it search all of Australia?** Yes, leave `location` empty or use a URL without an `l<id>` suffix.
+**Can I export Gumtree listings to CSV?** Yes. Every run writes to an Apify dataset, which you download from the run's Storage tab as CSV, JSON, Excel, XML or HTML, or fetch by API (`/v2/datasets/<id>/items?format=csv`). Column names are the field names in the table above.
 
-**How do I find a category or location id?** Open the category or region on gumtree.com.au and read the URL: `/s-components/c18552` (category 18552), `/s-sydney/l3003435` (location 3003435).
+**Does it work for gumtree.com.au only?** Yes. Gumtree UK (gumtree.com), New Zealand and South Africa are different sites with different markup and are rejected by the input validator rather than half-supported. All of Australia is covered: leave `location` empty or use a URL without an `l<id>` suffix.
+
+**How much does it cost per 1,000 listings?** $1.50 in result fees plus $0.01 per run start, so about $1.51 for a single 1,000-listing run; platform compute and proxy traffic are included in that price. With `includeDescription` on, the price is the same but the run takes roughly 25 times longer because each listing page is loaded.
+
+**Is there a Gumtree API?** Not a public one. Gumtree Australia has no developer API; this actor is the programmatic route: call it through the Apify API (`POST /v2/acts/tidesignal~gumtree-au-scraper/runs`), through the Apify clients for Python and JavaScript, on a schedule, or as an MCP tool.
+
+**Is scraping Gumtree legal?** Not legal advice. The actor reads only public listing pages, the same content anyone sees without an account; it does not log in and never extracts seller names, phone numbers or exact coordinates, only what the public card shows (suburb, price, posting date). Collecting public facts is treated differently from copying protected content or personal data, so keep listing text and photos out of anything you republish, do not contact people outside Gumtree's own messaging, and keep request rates modest. Gumtree's Terms of Use restrict automated access; you are responsible for your use of the data under those terms, Australian privacy law and the law where you are.
+
+**How often does it break?** No promise can be made about a site that changes without notice. Gumtree currently serves two page implementations at once; the parser reads the JSON both are rendered from, so CSS changes alone do not touch it. The other moving part is Peakhour's fingerprint database: when a profile on the HTTP ladder stops being trusted the browser path takes over. When something does break, the run fails with a clear message instead of returning an empty dataset, so a scheduled run of yours tells you the same day. Selector updates are pushed to this repository; report a failing search URL via the Issues tab.
 
 **Why is `price` null?** The ad has no numeric price: Swap/Trade, free, or "price not listed". `priceText` and `priceType` say which.
 
-**Does it get phone numbers or seller names?** No. It reads what is on the public listing card, plus the public description and condition when `includeDescription` is on. The seller's name, profile, phone and exact coordinates are never extracted.
-
-**Why did my run fail with "0 listings scraped"?** Every page was blocked or unparseable. The log says which: "blocked response(s) from bot mitigation" means the HTTP profiles were refused and the browser could not solve the challenge either (`challenge not solved` in the log means the challenge page stayed a challenge page for 20 s; `challenge not offered` means Peakhour hard-blocked the browser without one); check the proxy setting (residential, AU) first. "No listing matched the selectors" means Gumtree changed its page and the parser needs an update; open an issue with the search URL.
-
-**Gumtree UK / NZ / South Africa?** Not supported; those are different sites with different markup.
+**Why did my run fail with "0 listings scraped"?** Every page was blocked or unparseable; the log says which. "blocked response(s) from bot mitigation" means the HTTP profiles were refused and the browser could not solve the challenge either: check the proxy setting (residential, AU) first. "No listing matched the selectors" means Gumtree changed its page and the parser needs an update; open an issue with the search URL.
 
 ## Legal
 
-This actor reads publicly visible listing pages only, the same content anyone sees in a browser, and it does not log in or bypass any access control. It does not collect personal data beyond what Gumtree itself displays on a listing card (suburb, posting date, price). You are responsible for using the data in line with Gumtree's Terms of Use, its robots.txt, Australian privacy law and any applicable law in your jurisdiction; do not use it to contact people outside Gumtree's own messaging, and do not republish listing text or photos. Keep request rates modest.
+This actor reads publicly visible listing pages only, the same content anyone sees in a browser, and it does not log in. It does not collect personal data beyond what Gumtree itself displays on a listing card (suburb, posting date, price). You are responsible for using the data in line with Gumtree's Terms of Use, its robots.txt, Australian privacy law and any applicable law in your jurisdiction; do not use it to contact people outside Gumtree's own messaging, and do not republish listing text or photos. Keep request rates modest. Not affiliated with Gumtree.
 
-Maintained by [tidesignal](https://github.com/tidesignal). Issues and selector updates: GitHub.
+## Changelog
+
+- **0.4** (2026-09-12): the browser waits for the post-challenge document to finish parsing before reading it (fixes half-rendered pages); run usage is logged at the end of each run.
+- **0.3** (2026-09-12): Peakhour JavaScript challenge solved in headless Chromium; `auto` mode = one HTTP attempt, browser solves the challenge, browser cookies offered to the HTTP client once, run stays in the browser if refused.
+- **0.2** (2026-09-12): HTTP-first fetch path (`curl_cffi` browser fingerprint impersonation, profile ladder); `fetchMode` input; parser for Gumtree's Next.js search-page variant; `maxItems` default lowered to 24.
+- **0.1** (2026-09-11): first release. Playwright/Crawlee crawler, `APP_DATA` parser with tests on real pages, `kind` / `priceable` classification, empty-result guard.
+
+Maintained by [tidesignal](https://github.com/tidesignal). Issues and selector updates: [GitHub](https://github.com/tidesignal/gumtree-au-scraper/issues).
+
+## 中文简介
+
+Gumtree Australia Scraper 只抓取澳大利亚站 gumtree.com.au（不支持英国、新西兰、南非站）。粘贴任意 Gumtree 搜索、分类或地区页面的网址，或者直接给关键词，每条广告输出一行：标题、数字价格（澳元）、区域和州、发布时间（换算成悉尼时间的 ISO 时间戳）、图片、分类，以及 Wanted（求购）/ 免费 / 交换 / 故障件 / 打包出售等标记（`kind` 和 `priceable` 字段），方便直接过滤出真正可当作成交参考的报价。解析优先读取页面自带的 JSON（`window.APP_DATA` 和 `__NEXT_DATA__`），页面样式改动一般不影响；Gumtree 的 Peakhour 人机验证由无头 Chromium 自动完成。如果所有页面都被拦截或解析不到任何广告，运行会直接报错而不是返回空数据集。结果可在 Apify 控制台导出为 CSV、JSON 或 Excel，也可以通过 API 或定时任务调用。按结果计费：每 1,000 条 1.50 美元，另加每次启动 0.01 美元。不抓取卖家姓名、电话或精确坐标；请遵守 Gumtree 使用条款和当地法律，不要转发广告文字和图片。

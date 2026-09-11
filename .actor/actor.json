@@ -1,8 +1,8 @@
 {
   "actorSpecification": 1,
   "name": "gumtree-au-scraper",
-  "title": "Gumtree Australia Scraper",
-  "description": "Scrape gumtree.com.au search results and categories into a clean dataset: title, price, location, posting date, image, category, and Wanted / free / swap / promoted flags.",
+  "title": "Gumtree Australia Scraper – Listings & Prices to CSV/JSON",
+  "description": "Scrape gumtree.com.au listings to CSV/JSON/Excel: title, numeric price, suburb and state, posting date, image, Wanted/free/swap flags. Australia only.",
   "version": "0.4",
   "buildTag": "latest",
   "meta": {
