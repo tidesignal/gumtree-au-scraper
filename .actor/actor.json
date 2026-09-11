@@ -3,7 +3,7 @@
   "name": "gumtree-au-scraper",
   "title": "Gumtree Australia Scraper",
   "description": "Scrape gumtree.com.au search results and categories into a clean dataset: title, price, location, posting date, image, category, and Wanted / free / swap / promoted flags.",
-  "version": "0.3",
+  "version": "0.4",
   "buildTag": "latest",
   "meta": {
     "templateId": "python-playwright"

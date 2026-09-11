@@ -70,13 +70,28 @@ LOCATION_ALIASES = {"sydney": "3003435", "sydney region": "3003435"}
 # content. Measured 0.6-1.0 s locally; the budget covers a slow proxy.
 CHALLENGE_WAIT_SECS = 20
 
-# "The real page is here" for a search page: either data blob or rendered cards.
-SEARCH_READY_JS = (
-    "() => !!((window.APP_DATA && window.APP_DATA.search && window.APP_DATA.search.results)"
-    " || document.getElementById('__NEXT_DATA__') || document.querySelector('a.user-ad-row-new-design'))"
-)
+# "The real page is here" for a search page. The document must be fully parsed
+# (readyState past 'loading'): after the challenge's 307 -> 200 redirect the new
+# page streams in, and the first listing cards exist long before the data blob
+# (window.APP_DATA sits at ~58% of the document, the pagination link at ~54%).
+# Platform run e7Pbi0HTl8gKNCEwH snapshotted such a half-parsed page: 9 cards,
+# no APP_DATA, no next link. Cards alone are trusted only once readyState is
+# 'complete'.
+SEARCH_READY_JS = """() => {
+  if (document.readyState === 'loading') return false;
+  const blob = (window.APP_DATA && window.APP_DATA.search && window.APP_DATA.search.results)
+    || document.getElementById('__NEXT_DATA__');
+  if (blob) return true;
+  return document.readyState === 'complete' && !!document.querySelector('a.user-ad-row-new-design');
+}"""
 # ... and for a listing page (a Next.js app with JSON-LD).
-LISTING_READY_JS = "() => !!(document.getElementById('__NEXT_DATA__') || document.querySelector('script[type=\"application/ld+json\"]'))"
+LISTING_READY_JS = """() => {
+  if (document.readyState === 'loading') return false;
+  return !!(document.getElementById('__NEXT_DATA__') || document.querySelector('script[type="application/ld+json"]'));
+}"""
+# Gumtree's classic result page holds this many cards; fewer from the DOM path
+# with more results on the site and no next link means a half-rendered page.
+CARDS_PER_PAGE = 24
 APP_DATA_SEARCH_JS = "() => (window.APP_DATA && window.APP_DATA.search) ? ({ search: window.APP_DATA.search }) : null"
 
 # Chromium flags for the browser path. AutomationControlled off keeps
@@ -240,6 +255,7 @@ class RunState:
     http_pages: int = 0  # result/listing pages fetched over the HTTP path
     browser_pages: int = 0  # ... and over the browser path
     challenges_solved: int = 0  # browser pages that started as a 403 challenge and ended as content
+    partial_pages: int = 0  # DOM-parsed pages that look half-rendered (see partial_render_suspected)
     handoff_attempted: bool = False
     handoff_accepted: bool = False
     handed_to_browser: bool = False
@@ -528,6 +544,15 @@ def browser_crawler_options(cfg: Config, proxy_configuration=None) -> dict:
     }
 
 
+def partial_render_suspected(source: str, n_items: int, number_found, next_page_url) -> bool:
+    """True when a DOM-parsed page looks like a snapshot taken before the page finished rendering."""
+    if source != "dom" or next_page_url:
+        return False
+    if n_items >= CARDS_PER_PAGE:
+        return False
+    return number_found is None or number_found > n_items
+
+
 def cookies_to_handoff(
     cookies: list[dict], user_agent: str | None, session_id: str | None, proxy_url: str | None, url: str | None
 ) -> SessionHandoff:
@@ -600,6 +625,13 @@ async def run_browser(
             ready = True
         except Exception:  # noqa: BLE001 - timeout: fall through to the block check
             ready = False
+        if ready:
+            # The redirect after a solved challenge is a fresh navigation; make sure its document
+            # is fully parsed before reading it, or page.content() returns a truncated page.
+            try:
+                await context.page.wait_for_load_state("domcontentloaded", timeout=cfg.page_timeout_secs * 1000)
+            except Exception:  # noqa: BLE001
+                pass
         html = await context.page.content()
         title = await context.page.title()
         if not ready and looks_blocked(status, title, html):
@@ -658,9 +690,15 @@ async def run_browser(
         state.pages_ok += 1
         fresh = state.take(items)
         Actor.log.info(
-            f"Page {page_num} ({meta.source}, browser, HTTP {status}) {url}: {len(items)} listings, {len(fresh)} new "
+            f"Page {page_num} ({meta.source}, browser, HTTP {status}, {len(html)} bytes) {url}: {len(items)} listings, {len(fresh)} new "
             f"(total found on site: {meta.number_found}); accepted so far {state.reserved}/{cfg.max_items}"
         )
+        if partial_render_suspected(meta.source, len(items), meta.number_found, meta.next_page_url):
+            state.partial_pages += 1
+            Actor.log.warning(
+                f"Page {page_num} parsed from the DOM with only {len(items)} cards, no data blob and no next link "
+                f"while Gumtree reports {meta.number_found} results: the page was probably captured before it finished rendering."
+            )
 
         if cfg.include_description:
             with_url = [it for it in fresh if it.get("url")]
@@ -792,6 +830,47 @@ async def run_auto(
 
 
 # --------------------------------------------------------------------------- #
+# Run usage (platform only): proxy traffic, compute units, USD - for pricing
+# --------------------------------------------------------------------------- #
+def format_run_usage(run: dict | None) -> str | None:
+    """One log line from the Actor run record (`usage` per meter, `usageTotalUsd`, `stats`)."""
+    if not isinstance(run, dict):
+        return None
+    usage = run.get("usage") or {}
+    stats = run.get("stats") or {}
+    parts = []
+    cu = usage.get("ACTOR_COMPUTE_UNITS")
+    if cu is not None:
+        parts.append(f"compute {float(cu):.4f} CU")
+    for key, label in (("PROXY_RESIDENTIAL_TRANSFER_GBYTES", "residential proxy"), ("PROXY_SERPS", "SERP proxy"), ("DATA_TRANSFER_EXTERNAL_GBYTES", "external transfer")):
+        val = usage.get(key)
+        if val:
+            parts.append(f"{label} {float(val) * 1024:.2f} MB")
+    if usage.get("DATASET_WRITES"):
+        parts.append(f"dataset writes {int(usage['DATASET_WRITES'])}")
+    if run.get("usageTotalUsd") is not None:
+        parts.append(f"total ${float(run['usageTotalUsd']):.4f}")
+    if stats.get("runTimeSecs") is not None:
+        parts.append(f"runtime {float(stats['runTimeSecs']):.0f} s")
+    if not parts:
+        return None
+    return "Run usage so far: " + ", ".join(parts) + " (final figures on the run's Console row)."
+
+
+async def log_run_usage() -> None:
+    if not Actor.is_at_home():
+        return
+    try:
+        run_id = Actor.configuration.actor_run_id
+        run = await Actor.apify_client.run(run_id).get()
+        line = format_run_usage(run)
+        if line:
+            Actor.log.info(line)
+    except Exception as exc:  # noqa: BLE001 - reporting only
+        Actor.log.debug(f"Run usage unavailable: {exc}")
+
+
+# --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
 async def main() -> None:
@@ -853,9 +932,10 @@ async def main() -> None:
             f"{state.challenges_solved} challenges solved"
             + (", browser session accepted over HTTP" if state.handoff_accepted else (", browser session refused over HTTP" if state.handoff_attempted else ""))
             + f"), {state.zero_result_pages} genuine empty searches, {state.blocked_hits} blocked responses, "
-            f"{state.empty_pages} unparseable pages, {state.failed_requests} requests failed."
+            f"{state.empty_pages} unparseable pages, {state.partial_pages} half-rendered pages, {state.failed_requests} requests failed."
         )
         Actor.log.info(summary)
+        await log_run_usage()
         failure = evaluate_run(state)
         if failure:
             Actor.log.error(failure)
