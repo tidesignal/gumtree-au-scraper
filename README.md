@@ -41,8 +41,9 @@ Either paste Gumtree URLs or describe the search.
 ```json
 {
   "searchUrls": [{ "url": "https://www.gumtree.com.au/s-sydney/exercise+bike/k0l3003435" }],
-  "maxItems": 100,
+  "maxItems": 24,
   "includeDescription": false,
+  "fetchMode": "auto",
   "proxyConfiguration": { "useApifyProxy": true, "apifyProxyGroups": ["RESIDENTIAL"], "apifyProxyCountry": "AU" }
 }
 ```
@@ -62,8 +63,9 @@ or
 
 - **searchUrls**: any result page copied from the address bar. Filters in the URL (price range, condition, `?ad=wanted`, `?sort=price_asc`) are respected. Takes priority over the keyword fields.
 - **keyword / category / location**: `category` is the number after `c` in a category URL (`/s-components/c18552`), `location` is the number after `l` at the end of a result URL (`.../k0l3003435` = Sydney Region; `sydney` is accepted as a shortcut). Unknown location names are rejected rather than guessed.
-- **maxItems**: total unique listings across all start URLs. Gumtree pages hold 24 listings.
+- **maxItems**: total unique listings across all start URLs. Gumtree pages hold 24 listings, so the default of 24 is one page: a cheap first run. Raise it once the output looks right.
 - **includeDescription**: opens every listing page (one extra page load per row).
+- **fetchMode**: `auto` (default), `http` or `browser`. See "Fetch modes" below.
 - **proxyConfiguration**: see "Proxies" below.
 
 ## Output example
@@ -115,7 +117,17 @@ or
 
 ## How it works
 
-Headless Chromium (Playwright) loads each result page and reads the JSON the page is rendered from (`window.APP_DATA.search.results`), which is more stable than the markup. If that blob is missing, it falls back to the rendered cards. Pagination follows Gumtree's own next-page link until `maxItems` is reached or the last page is hit. Rows are de-duplicated by listing id across pages and start URLs.
+By default no browser is involved. A plain HTTP client (`curl_cffi`) that presents the TLS and HTTP/2 fingerprint of a real browser fetches each result page and reads the JSON the page is rendered from (`window.APP_DATA.search.results`), which is more stable than the markup. Gumtree also A/B-serves a second implementation of the same page (Next.js, `__NEXT_DATA__`); that is read too. If neither blob is present, the rendered cards are parsed. Pagination follows Gumtree's own next-page link until `maxItems` is reached or the last page is hit. Rows are de-duplicated by listing id across pages and start URLs. One HTTP session (cookie jar + proxy session + fingerprint profile) is kept for the whole run and rotated only when Gumtree blocks it.
+
+### Fetch modes
+
+| `fetchMode` | What happens | When to use |
+| --- | --- | --- |
+| `auto` (default) | HTTP client first. If it is blocked on two pages in a row after all retries, the remaining pages are fetched with headless Chromium instead. | Always, unless you are debugging. |
+| `http` | HTTP client only (`curl_cffi`, browser fingerprint impersonation). No Chromium: roughly 10x cheaper in compute and proxy traffic than a browser, and a page takes well under a second. | Cheapest runs; scheduled monitoring. |
+| `browser` | Headless Chromium (Playwright) for every page, with fingerprint injection and session rotation. Slower and about 1 GB of memory. | Only if `http` stops working after a change on Gumtree's side. |
+
+Why HTTP beats a browser here: gumtree.com.au's bot mitigation (Peakhour) fingerprints the *client*, not the IP. Measured on 2026-09-12: headless Chromium got HTTP 403 on every request through ten Apify residential AU proxy sessions, while `curl_cffi` impersonating Safari 18 / Chrome 124 got the page on the first try from the same kind of connection. The HTTP client tries a short ladder of fingerprint profiles (`safari18_0` over HTTP/2, `chrome124` over HTTP/1.1, `chrome120`, `safari15_5`) and moves to the next one, with a fresh proxy session and cookie jar, whenever a response is a Peakhour challenge (`peakhour-challenge: 1`, an obfuscated JavaScript page), a hard block (`peakhour-error: blocked`, empty body) or a 429.
 
 Selectors and data sources verified on 2026-09-11 against live pages ("rtx 4070", "exercise bike" in Sydney Region, the Components category, and a Wanted-only category page):
 
@@ -130,11 +142,27 @@ Selectors and data sources verified on 2026-09-11 against live pages ("rtx 4070"
 
 ## Proxies
 
-gumtree.com.au sits behind bot mitigation (Peakhour). During development (2026-09-11, Sydney residential IP) it refused every automated browser: headless and headed Chromium, Firefox, and fingerprint-spoofed Chromium all received HTTP 403 (an empty body, a JavaScript challenge, or an "Access denied" page), while a regular Chrome window on the same connection loaded the pages normally. The default input therefore uses **Apify residential proxies, country AU**, and the crawler rotates its proxy session whenever a page comes back blocked. Running without a proxy is supported but is only expected to work from connections Gumtree already trusts.
+gumtree.com.au sits behind bot mitigation (Peakhour) that fingerprints the TLS/HTTP client. The default HTTP client passes that check, so the proxy only has to look like an ordinary Australian connection: the default input uses **Apify residential proxies, country AU**, and a fresh proxy session is taken whenever a page comes back blocked. Datacenter proxies and non-AU exits are more likely to be refused. Running with no proxy works from a residential Australian connection (that is how the scraper was developed).
+
+What was measured (2026-09-12, Sydney residential connection, fresh session per request, a search page and a listing page):
+
+| Client | Result |
+| --- | --- |
+| Headless Chromium (Playwright), also via Apify residential AU proxy | HTTP 403 on every request |
+| `curl_cffi` impersonating Chrome 146 / 136 / 131, Edge, Firefox, Safari 26 | HTTP 403 with a Peakhour JavaScript challenge or an empty "blocked" body |
+| `curl_cffi` impersonating Safari 18.0 (HTTP/2 or HTTP/1.1), Chrome 124 (HTTP/1.1 only), Chrome 120, Safari 15.5 | HTTP 200, real page with listing data |
+
+Peakhour's fingerprint database moves; if every profile on the ladder starts failing, the run reports it (see "Why did my run fail" below) and `fetchMode: "browser"` is the stop-gap while the ladder is updated.
 
 ## Performance and cost
 
-One page load per 24 listings; a 100-listing run is 5 result pages. `includeDescription` adds one page per listing. Concurrency is kept low (1-2 pages at a time) with a randomised pause between loads to stay under Gumtree's rate limits; raise `requestDelaySecs` if you see 429s.
+One page fetch per 24 listings; a 100-listing run is 5 result pages. `includeDescription` adds one page per listing. Pages are fetched one at a time with a randomised pause between them to stay under Gumtree's rate limits; raise `requestDelaySecs` if you see 429s.
+
+Keeping a first run cheap:
+
+- `maxItems` defaults to **24** (one page). A default run costs one Actor start plus 24 results plus about 0.5 MB of residential proxy traffic.
+- Set a **maximum cost per run** in the run options (Console: *Run options -> Max cost per run*; API: `maxTotalChargeUsd`). The platform stops the run when the cap is reached, whatever the input says; `$0.10` is plenty for a 24-item test and `$1` covers roughly 500 listings. The scraper itself does not need to know the cap.
+- `fetchMode: "http"` (or the default `auto`, which is HTTP unless blocked) uses no browser, so compute is a few seconds per run instead of a Chromium process for the whole run.
 
 ## FAQ
 
@@ -146,7 +174,7 @@ One page load per 24 listings; a 100-listing run is 5 result pages. `includeDesc
 
 **Does it get phone numbers or seller names?** No. It reads what is on the public listing card, plus the public description and condition when `includeDescription` is on. The seller's name, profile, phone and exact coordinates are never extracted.
 
-**Why did my run fail with "0 listings scraped"?** Every page was blocked or unparseable. Check the proxy setting (residential, AU) first; if the selectors changed on Gumtree's side the log will say "no listing matched the selectors".
+**Why did my run fail with "0 listings scraped"?** Every page was blocked or unparseable. The log says which: "blocked response(s) from bot mitigation" means every fingerprint profile on the HTTP ladder (and, in `auto` mode, the browser too) was refused; check the proxy setting (residential, AU) first, then try `fetchMode: "browser"`. "No listing matched the selectors" means Gumtree changed its page and the parser needs an update; open an issue with the search URL.
 
 **Gumtree UK / NZ / South Africa?** Not supported; those are different sites with different markup.
 

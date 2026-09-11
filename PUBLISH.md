@@ -22,9 +22,9 @@ Console -> **Actors** -> **Development** -> **Create new** (button top right) ->
 
 ## 2. Test run in Console
 
-**Input** tab: leave the prefilled URL (`https://www.gumtree.com.au/s-rtx+4070/k0`), `maxItems` 30, proxy = Apify Proxy, group RESIDENTIAL, country AU (that is the input default). **Start**.
+**Input** tab: leave the prefilled URL (`https://www.gumtree.com.au/s-rtx+4070/k0`), `maxItems` 24 (the default), `fetchMode` auto (the default), proxy = Apify Proxy, group RESIDENTIAL, country AU (the input default). Set *Run options -> Max cost per run* to `$0.10`. **Start**.
 
-Pass criteria: run status SUCCEEDED, dataset has ~30 rows, log shows `Page 1 (app_data) ...: 24 listings`. If it fails with `0 listings scraped: N blocked response(s)`, the residential AU proxy is not getting through either; do not publish until it does (see "Known risks").
+Pass criteria: run status SUCCEEDED, dataset has 24 rows, log shows `HTTP session ...: impersonate=safari18_0 h2 proxy=yes` followed by `Page 1 (app_data, http safari18_0/h2, 1 attempt(s)) ...: 24 listings`. A line `Rotating session (challenge)` followed by a successful page is fine (the ladder did its job); `handing ... to the headless browser` means every HTTP profile was refused and needs looking at even if the browser then succeeded. If it fails with `0 listings scraped: N blocked response(s)`, see "Known risks".
 
 Run once more with `includeDescription: true` and `maxItems: 5`; check `description`, `condition`, `postcode` are filled.
 
@@ -87,6 +87,6 @@ Do **not** tick "platform usage paid by user" for V0: it makes the run price unp
 
 ## Known risks
 
-- **Bot mitigation.** Peakhour on gumtree.com.au refused every automated browser during local development (see README "Proxies"). Residential AU proxies are the tested plan but were not verified before this commit because no Apify proxy was available locally. Step 2 is therefore a hard gate.
+- **Bot mitigation.** Peakhour on gumtree.com.au fingerprints the client. Platform run `OIa36sYyzTSm4rGLi` (2026-09-12, RESIDENTIAL/AU, headless Chromium) got 403 on all ten proxy sessions, which is why the HTTP path (`curl_cffi` with browser impersonation) is now the default: from a Sydney residential IP it gets 200 with `safari18_0`/h2 and `chrome124`/h1.1 while the newest Chrome profiles get a challenge. The profile ladder lives in `src/http_fetch.py` (`PROFILE_LADDER`, with the full measurement table in the module docstring); when Peakhour updates its database, re-run `tests/` plus a live check and reorder the ladder. Step 2 is still the hard gate for the platform side.
 - **Location ids.** Only Sydney Region (3003435) is aliased; everything else needs the numeric id. A follow-up could add the other capital-city region ids after reading them off real URLs.
 - **UK/NZ/ZA** are out of scope and rejected by the input validator, which keeps the promise in the title honest.

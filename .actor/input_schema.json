@@ -10,7 +10,9 @@
       "description": "Any gumtree.com.au search, category or location result page, copied from the address bar. Examples: `https://www.gumtree.com.au/s-rtx+4070/k0` (keyword), `https://www.gumtree.com.au/s-sydney/exercise+bike/k0l3003435` (keyword in a region), `https://www.gumtree.com.au/s-components/c18552` (category), `https://www.gumtree.com.au/s-components/c18552?ad=wanted` (only Wanted ads). Filters and sort order in the URL are respected. Takes priority over the keyword fields below when both are given.",
       "editor": "requestListSources",
       "prefill": [
-        { "url": "https://www.gumtree.com.au/s-rtx+4070/k0" }
+        {
+          "url": "https://www.gumtree.com.au/s-rtx+4070/k0"
+        }
       ]
     },
     "keyword": {
@@ -36,8 +38,16 @@
       "type": "string",
       "description": "Offering = people selling, Wanted = people looking to buy (Gumtree's own filter, `?ad=wanted`). Rows always carry an `isWanted` flag regardless of this setting.",
       "editor": "select",
-      "enum": ["all", "offering", "wanted"],
-      "enumTitles": ["All ads", "Offering only", "Wanted only"],
+      "enum": [
+        "all",
+        "offering",
+        "wanted"
+      ],
+      "enumTitles": [
+        "All ads",
+        "Offering only",
+        "Wanted only"
+      ],
       "default": "all"
     },
     "sortBy": {
@@ -45,16 +55,26 @@
       "type": "string",
       "description": "Gumtree's own sort options (`?sort=`). Use `Most recent` for change tracking, `Cheapest` for price research.",
       "editor": "select",
-      "enum": ["rank", "date", "price_asc", "price_desc"],
-      "enumTitles": ["Best match", "Most recent", "Cheapest first", "Most expensive first"],
+      "enum": [
+        "rank",
+        "date",
+        "price_asc",
+        "price_desc"
+      ],
+      "enumTitles": [
+        "Best match",
+        "Most recent",
+        "Cheapest first",
+        "Most expensive first"
+      ],
       "default": "rank"
     },
     "maxItems": {
       "title": "Maximum listings",
       "type": "integer",
-      "description": "Stop after this many unique listings in total (across all start URLs). Gumtree shows 24 listings per page, so 100 items is about 5 page loads.",
+      "description": "Stop after this many unique listings in total (across all start URLs). Gumtree shows 24 listings per page, so the default of 24 is one page: a cheap first run. Raise it once the first run looks right (100 is about 5 pages).",
       "editor": "number",
-      "default": 100,
+      "default": 24,
       "minimum": 1,
       "maximum": 10000,
       "unit": "listings"
@@ -66,18 +86,47 @@
       "editor": "checkbox",
       "default": false
     },
+    "fetchMode": {
+      "title": "Fetch mode",
+      "type": "string",
+      "description": "How pages are fetched. `auto` (default) uses the plain HTTP client first and switches to the headless browser only if the HTTP client is blocked on two pages in a row. `http` is HTTP only: a curl-based client that presents the TLS/HTTP fingerprint of a real browser (curl_cffi), no Chromium, about 10x cheaper and faster. `browser` forces headless Chromium (Playwright) for every page; use it only if `http` stops working.",
+      "editor": "select",
+      "enum": [
+        "auto",
+        "http",
+        "browser"
+      ],
+      "enumTitles": [
+        "Auto (HTTP first, browser fallback)",
+        "HTTP only (curl_cffi)",
+        "Browser only (Playwright)"
+      ],
+      "default": "auto"
+    },
     "proxyConfiguration": {
       "title": "Proxy configuration",
       "type": "object",
-      "description": "gumtree.com.au sits behind bot mitigation (Peakhour) that refuses datacenter and headless-browser traffic. Apify residential proxies with country set to Australia are the tested configuration. Running with no proxy works from a residential Australian connection only.",
+      "description": "gumtree.com.au sits behind bot mitigation (Peakhour) that fingerprints the TLS/HTTP client. The default HTTP client impersonates a real browser and passes that check; the proxy then only has to look like an ordinary Australian connection. Apify residential proxies, country Australia, are the tested configuration. Datacenter proxies and non-AU exits are more likely to be refused. Running with no proxy works from a residential Australian connection.",
       "editor": "proxy",
-      "default": { "useApifyProxy": true, "apifyProxyGroups": ["RESIDENTIAL"], "apifyProxyCountry": "AU" },
-      "prefill": { "useApifyProxy": true, "apifyProxyGroups": ["RESIDENTIAL"], "apifyProxyCountry": "AU" }
+      "default": {
+        "useApifyProxy": true,
+        "apifyProxyGroups": [
+          "RESIDENTIAL"
+        ],
+        "apifyProxyCountry": "AU"
+      },
+      "prefill": {
+        "useApifyProxy": true,
+        "apifyProxyGroups": [
+          "RESIDENTIAL"
+        ],
+        "apifyProxyCountry": "AU"
+      }
     },
     "maxRetries": {
       "title": "Retries per page",
       "type": "integer",
-      "description": "How many times a blocked or failed page is retried with a fresh proxy session before it is given up.",
+      "description": "How many times a blocked or failed page is retried before it is given up. Each retry uses a fresh proxy session, a fresh cookie jar and the next browser fingerprint profile.",
       "editor": "number",
       "default": 3,
       "minimum": 0,
@@ -87,7 +136,7 @@
     "requestDelaySecs": {
       "title": "Delay between page loads (seconds)",
       "type": "number",
-      "description": "Politeness pause before each page load, randomised between 50% and 150% of this value. Raise it if you see 429 responses.",
+      "description": "Politeness pause before each page fetch, randomised between 50% and 150% of this value. Raise it if you see 429 responses.",
       "editor": "number",
       "default": 2,
       "minimum": 0,
@@ -96,7 +145,7 @@
     "pageTimeoutSecs": {
       "title": "Page timeout (seconds)",
       "type": "integer",
-      "description": "Maximum time to wait for a result page to load and render its listing data.",
+      "description": "Maximum time to wait for one page (HTTP request, or browser load and render).",
       "editor": "number",
       "default": 60,
       "minimum": 10,

@@ -1,0 +1,224 @@
+{
+ "props": {
+  "pageProps": {
+   "initialSearchBody": {
+    "keyword": "rtx 4070",
+    "page": 0
+   },
+   "searchData": {
+    "pager": {
+     "firstPage": true,
+     "firstPageUrl": "/s-rtx+4070/k0",
+     "lastPage": false,
+     "lastPageNum": 2,
+     "lastPageUrl": "/s-rtx+4070/k0",
+     "nextPageUrl": "/s-rtx+4070/page-2/k0",
+     "numFound": 33,
+     "previousPageUrl": "",
+     "pageNumberLinks": [
+      {
+       "name": "1",
+       "content": "/s-rtx+4070/k0"
+      }
+     ],
+     "resultsPerPageOptions": [
+      40
+     ]
+    },
+    "results": {
+     "listings": [
+      {
+       "id": 1344519187,
+       "categoryId": 18552,
+       "url": "/web/listing/components/1344519187",
+       "heading": "ASUS TUF Gaming RTX 4070 Ti 12GB (OC Edition)",
+       "mainHeading": "$950",
+       "mainHeadingInfo": "Negotiable",
+       "description": "ASUS TUF Gaming RTX 4070 Ti (OC Edition)\n\nUsed in good condition - see photos\n\nIncludes\nGPU\nPower splitter cable\nStandoff / support\nOriginal box\n\n* software not shipped with the card - latest/current NVidia drivers will need to downloaded from internet, and old drivers removed first if swapping from AMD or Intel GPU\n* recommended minimum 750w power supply",
+       "age": "12 hours ago",
+       "featured": [],
+       "flags": {
+        "imagePlaceholder": true,
+        "hasVideo": false,
+        "onWatchlist": false,
+        "highlighted": false
+       },
+       "location": {
+        "text": "Dural, NSW"
+       },
+       "media": {
+        "count": 5,
+        "images": [
+         {
+          "small": "https://images.gumtree.com.au/image/private/t_$_35/gumtree/f879bb9c-0584-4c0a-9ae1-1c3ec7a727fa.jpg",
+          "large": "https://images.gumtree.com.au/image/private/t_$_75/gumtree/f879bb9c-0584-4c0a-9ae1-1c3ec7a727fa.jpg"
+         }
+        ]
+       },
+       "listingDetails": [
+        {
+         "value": "Used",
+         "icon": "IconRewardStars"
+        },
+        {
+         "value": "Pickup Only",
+         "icon": "IconShipmentInTransit"
+        }
+       ],
+       "adPosterData": {},
+       "template": "OTHERS"
+      },
+      {
+       "id": 1344486171,
+       "categoryId": 18551,
+       "url": "/web/listing/desktops/1344486171",
+       "heading": "Gaming PC – RTX 4070, i5-13400F, 32GB DDR5, 1TB SSD",
+       "mainHeading": "$1,800",
+       "mainHeadingInfo": "Negotiable",
+       "description": "Selling a high-performance gaming PC Ideal for 1440p/4K gaming, streaming, or editing.\n\nActivated Windows 11\n\nSpecs:\nCPU: Intel Core i5-13400F (13th Gen, 10-core)\n\nGPU: Gigabyte RTX 4070 WindForce OC 12GB\n\nRAM: 32GB 2-16GB Crucial DDR5 Pro 5600MHz\n\nStorage: 1TB Kingston NV2 NVMe SSD (PCle 4.0)\n\nMotherboard: ASUS Prime B760M-A WiFi DDR5\n• Wi-Fi 6 + Bluetooth\n• PCle 5.0 support\n• Dual M.2 slots\n\nPSU: Cooler Master MWE Gold 750W V2 (Fully Modular, 80+ Gold)\n\nCase: Antec DP30IM Mid Tower\n\nOS: Windo",
+       "age": "09/09/2026",
+       "featured": [],
+       "flags": {
+        "imagePlaceholder": true,
+        "hasVideo": false,
+        "onWatchlist": false,
+        "highlighted": false
+       },
+       "location": {
+        "text": "Parramatta, NSW"
+       },
+       "media": {
+        "count": 5,
+        "images": [
+         {
+          "small": "https://images.gumtree.com.au/image/private/t_$_35/gumtree/7819a1bd-caa9-4195-99cc-23e7ab6a80fa.jpg",
+          "large": "https://images.gumtree.com.au/image/private/t_$_75/gumtree/7819a1bd-caa9-4195-99cc-23e7ab6a80fa.jpg"
+         }
+        ]
+       },
+       "listingDetails": [
+        {
+         "value": "Used",
+         "icon": "IconRewardStars"
+        },
+        {
+         "value": "Pickup Only",
+         "icon": "IconShipmentInTransit"
+        }
+       ],
+       "adPosterData": {},
+       "template": "OTHERS"
+      },
+      {
+       "id": 1344466910,
+       "categoryId": 18553,
+       "url": "/web/listing/laptops/1344466910",
+       "heading": "Alienware m16 R2 - Core Ultra 7 155H, RTX 4070, 32GB - Barely Used",
+       "mainHeading": "$2,400",
+       "description": "ALIENWARE m16 R2 — BARELY USED, BEAST-MODE SPECS\n\nSelling my Alienware m16 R2 in stealthy black — this thing has hardly\nseen any use and performs like it just came out of the box. Upgrading\nto a MacBook for uni, so someone's about to get an absolute steal on a\ntop-tier gaming/creator laptop.\n\nSPECS\n- Intel Core Ultra 7 155H (16-core, up to 4.8GHz Turbo)\n- NVIDIA GeForce RTX 4070 (140W) - crushes 1440p gaming\n- 32GB DDR5 RAM\n- 1TB NVMe SSD\n- 16\" QHD+ (2560x1600) 240Hz display, 100% sRGB, NVIDIA ",
+       "age": "08/09/2026",
+       "featured": [],
+       "flags": {
+        "imagePlaceholder": true,
+        "hasVideo": false,
+        "onWatchlist": false,
+        "highlighted": false
+       },
+       "location": {
+        "text": "Leeming, WA"
+       },
+       "media": {
+        "count": 7,
+        "images": [
+         {
+          "small": "https://images.gumtree.com.au/image/private/t_$_35/gumtree/74e33f91-845f-4ddf-bc90-da554846f5cc.jpg",
+          "large": "https://images.gumtree.com.au/image/private/t_$_75/gumtree/74e33f91-845f-4ddf-bc90-da554846f5cc.jpg"
+         }
+        ]
+       },
+       "listingDetails": [
+        {
+         "value": "Used",
+         "icon": "IconRewardStars"
+        },
+        {
+         "value": "Price on request",
+         "icon": "IconShipmentInTransit"
+        },
+        {
+         "value": "Windows 11",
+         "icon": "IconLaptopSettings"
+        },
+        {
+         "value": "Dell",
+         "icon": "IconTags"
+        }
+       ],
+       "adPosterData": {},
+       "template": "OTHERS"
+      }
+     ],
+     "topSection": {
+      "breadCrumbs": [],
+      "title": "rtx 4070",
+      "locationInfo": "in Australia",
+      "resultsInfo": "33 results"
+     },
+     "exactMatchListingCount": null,
+     "listingsMessage": null
+    },
+    "srpMetaRequest": {
+     "searchMetadata": {
+      "numFound": 33,
+      "hasKeyword": true,
+      "searchParams": {
+       "pageInfo": {
+        "size": 34,
+        "pageNum": 0,
+        "sort": "rank"
+       },
+       "searchRequestFilters": {
+        "keyword": "rtx 4070"
+       }
+      },
+      "indexStatus": "NONE",
+      "correlationId": "4734a10d-dc4a-410a-af69-a14f53b719de"
+     }
+    }
+   },
+   "ssrData": {
+    "analytics": {
+     "s": {
+      "sr": [
+       {
+        "id": 1344519187,
+        "pos": 0,
+        "t": "ORGANIC",
+        "ftr": []
+       },
+       {
+        "id": 1344486171,
+        "pos": 1,
+        "t": "ORGANIC",
+        "ftr": []
+       },
+       {
+        "id": 1344466910,
+        "pos": 2,
+        "t": "ORGANIC",
+        "ftr": []
+       }
+      ]
+     }
+    }
+   }
+  }
+ },
+ "page": "/[[...searchQueries]]",
+ "query": {
+  "searchQueries": [
+   "s-rtx+4070",
+   "k0"
+  ]
+ }
+}

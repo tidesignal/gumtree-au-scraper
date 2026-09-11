@@ -285,3 +285,57 @@ def test_build_search_url_forms():
         config_from_input({"searchUrls": [{"url": "https://www.gumtree.com/s-x/k0"}]})  # UK site
     with pytest.raises(ValueError):
         config_from_input({})
+
+
+# --------------------------------------------------------------------------- #
+# Next.js SRP variant (__NEXT_DATA__), A/B-served by Gumtree since at least 2026-09-12
+# --------------------------------------------------------------------------- #
+def test_next_data_variant_parses_listings_and_pager():
+    from src.parser import extract_next_data, parse_search_next_data
+
+    nd = load_json("rtx4070_next_data.json")
+    items, meta = parse_search_next_data(nd, source_url=SRC, page=1, now=NOW)
+    assert meta.source == "next_data" and meta.number_found == 33
+    assert meta.next_page_url == "https://www.gumtree.com.au/s-rtx+4070/page-2/k0" and meta.is_last_page is False
+    assert meta.last_page == 2 and meta.zero_results is False
+    assert [it["id"] for it in items] == ["1344519187", "1344486171", "1344466910"]
+    first = items[0]
+    assert first["title"] == "ASUS TUF Gaming RTX 4070 Ti 12GB (OC Edition)"
+    assert first["price"] == 950 and first["priceText"] == "$950"
+    assert first["priceType"] == "NEGOTIABLE" and first["isNegotiable"] is True
+    assert (first["suburb"], first["state"], first["location"]) == ("Dural", "NSW", "Dural, NSW")
+    assert first["postedAt"] == "12 hours ago" and first["postedAtIso"] == "2026-09-11T10:00:00+10:00"
+    assert first["url"] == "https://www.gumtree.com.au/web/listing/components/1344519187" and first["category"] == "components"
+    assert first["imageUrl"].startswith("https://images.gumtree.com.au/") and first["isPromoted"] is False
+    assert first["snippet"].startswith("ASUS TUF Gaming RTX 4070 Ti (OC Edition)") and len(first["snippet"]) <= 500
+    assert first["kind"] == "item" and first["priceable"] is True
+    alienware = items[2]
+    assert alienware["price"] == 2400 and alienware["priceType"] == "FIXED" and alienware["isNegotiable"] is False
+
+    html = ('<html><head><title>rtx 4070 | Gumtree Australia Local Classifieds</title></head><body>'
+            '<script id="__NEXT_DATA__" type="application/json">' + json.dumps(nd) + "</script></body></html>")
+    assert extract_next_data(html)["props"]["pageProps"]["searchData"]["pager"]["numFound"] == 33
+    items2, meta2 = parse_search_page(html, source_url=SRC, now=NOW)
+    assert len(items2) == 3 and meta2.source == "next_data"
+
+
+def test_next_data_variant_zero_results_and_promoted_flag():
+    from src.parser import parse_search_next_data
+
+    nd = {"props": {"pageProps": {"searchData": {
+        "pager": {"numFound": 0, "nextPageUrl": "", "lastPage": True, "lastPageNum": 1},
+        "results": {"listings": [], "listingsMessage": {"message": "No exact match found"}}}}}}
+    items, meta = parse_search_next_data(nd, source_url=SRC, now=NOW)
+    assert items == [] and meta.zero_results is True and meta.next_page_url is None
+
+    nd = {"props": {"pageProps": {
+        "searchData": {"pager": {"numFound": 2, "nextPageUrl": ""},
+                       "results": {"listings": [
+                           {"id": 1, "url": "/web/listing/x/1", "heading": "Promo", "mainHeading": "$5"},
+                           {"id": 2, "url": "/web/listing/x/2", "heading": "Wanted: 4070", "mainHeading": "Swap/Trade", "location": {"text": "Sydney"}},
+                           {"id": 3, "url": "/web/listing/x/3", "heading": "Old TV", "mainHeading": "Free"}]}},
+        "ssrData": {"analytics": {"s": {"sr": [{"id": 1, "t": "TOP"}, {"id": 2, "t": "ORGANIC"}]}}}}}}
+    items, meta = parse_search_next_data(nd, source_url=SRC, now=NOW)
+    assert [it["isPromoted"] for it in items] == [True, False, False]
+    assert items[1]["kind"] == "wanted" and items[1]["isSwap"] is True and items[1]["suburb"] == "Sydney" and items[1]["state"] is None
+    assert items[2]["kind"] == "free" and items[2]["isFree"] is True and items[2]["price"] is None

@@ -21,6 +21,12 @@ Search results page (SRP), e.g. /s-rtx+4070/k0
   isFeatured, isB2CPlus, isPostedByCarDealer, isPriceDrop, previousPriceString.
   ``price`` is always "" in this blob, so the number is parsed from priceText.
 
+* Second source: Gumtree A/B-serves a Next.js implementation of the same page
+  (seen 2026-09-12, ~900 KB, no APP_DATA, no user-ad-row cards): listings live
+  in ``<script id="__NEXT_DATA__">`` under props.pageProps.searchData.results
+  .listings (40 per page) with pagination in searchData.pager. See
+  parse_search_next_data.
+
 * Fallback source: the rendered cards.
     a.user-ad-row-new-design                 one per listing; id="user-ad-<id>",
                                              href="/web/listing/<category>/<id>"
@@ -91,29 +97,56 @@ class BlockedPage(Exception):
 # --------------------------------------------------------------------------- #
 # Block / page-type detection
 # --------------------------------------------------------------------------- #
-_BLOCK_MARKERS = (
-    "Peakhour",
-    "PEAKHOUR_VISIT",
-    "Access has been denied to the requested page",
-)
+# Strings that occur only on Peakhour's own pages. NOTE: "Peakhour" / "PEAKHOUR_VISIT"
+# are NOT markers: every real page carries a beacon script that reads the
+# PEAKHOUR_VISIT cookie, so those strings appear on 200 pages too (verified 2026-09-12).
+_CHALLENGE_MARKERS = ("Peakhour-Challenge",)  # the header the challenge script POSTs back
+_DENIED_MARKERS = ("Access has been denied to the requested page",)
+
+
+def detect_block(
+    status: int | None,
+    headers: dict[str, str] | None = None,
+    html: str | None = None,
+    title: str | None = None,
+) -> str | None:
+    """Classify a response: None for a real page, else why it is not one.
+
+    Returns one of ``challenge`` (Peakhour JS challenge page), ``blocked``
+    (Peakhour hard block / 401 / 403), ``rate_limited`` (429), ``denied`` (an
+    "Access denied" page), ``unavailable`` (503).
+
+    Observed 2026-09-11/12: HTTP 403 with header ``peakhour-challenge: 1`` and
+    a ~31 KB obfuscated JS body with no <title>; HTTP 403 with header
+    ``peakhour-error: blocked`` and an empty body; HTTP 403 with a 1.6 KB
+    "Access denied" page (Playwright only); and, in a browser, a 200 challenge
+    shell with an empty title and a tiny body.
+    """
+    h = {str(k).lower(): str(v) for k, v in (headers or {}).items()}
+    body = html or ""
+    if h.get("peakhour-challenge"):
+        return "challenge"
+    if h.get("peakhour-error"):
+        return "blocked"
+    if status == 429:
+        return "rate_limited"
+    if status in (401, 403):
+        return "challenge" if any(m in body for m in _CHALLENGE_MARKERS) else "blocked"
+    if status == 503:
+        return "unavailable"
+    t = (title or "").strip().lower()
+    if t == "access denied" or any(m in body for m in _DENIED_MARKERS):
+        return "denied"
+    if any(m in body for m in _CHALLENGE_MARKERS):
+        return "challenge"
+    if not t and len(body) < 5000:
+        return "challenge"  # JS challenge shell rendered by a browser: no title, almost no markup
+    return None
 
 
 def looks_blocked(status: int | None, title: str | None, html: str | None) -> bool:
-    """True for the responses Peakhour serves to traffic it does not like.
-
-    Observed 2026-09-11 from Playwright: HTTP 403 with an empty body, HTTP 403
-    with a 31 KB obfuscated JS challenge (title empty), and HTTP 403 with a
-    1.6 KB "Access denied" page that prints a Request ID and the client IP.
-    """
-    if status in (401, 403, 429, 503):
-        return True
-    t = (title or "").strip().lower()
-    body = html or ""
-    if t == "access denied":
-        return True
-    if not t and len(body) < 5000:
-        return True
-    return any(marker in body for marker in _BLOCK_MARKERS)
+    """True for the responses Peakhour serves to traffic it does not like (see detect_block)."""
+    return detect_block(status, None, html, title) is not None
 
 
 def looks_like_gumtree(title: str | None, html: str | None) -> bool:
@@ -135,6 +168,23 @@ def extract_app_data(html: str) -> dict | None:
         return None
     try:
         obj, _ = json.JSONDecoder().raw_decode(html, m.end())
+    except json.JSONDecodeError:
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
+_NEXT_DATA_RE = re.compile(r'<script[^>]+id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S)
+
+
+def extract_next_data(html: str) -> dict | None:
+    """Return the ``<script id="__NEXT_DATA__">`` JSON of a Next.js-rendered page, or None."""
+    if not html:
+        return None
+    m = _NEXT_DATA_RE.search(html)
+    if not m:
+        return None
+    try:
+        obj = json.loads(m.group(1))
     except json.JSONDecodeError:
         return None
     return obj if isinstance(obj, dict) else None
@@ -269,7 +319,7 @@ class SearchMeta:
     current_page: int | None = None
     last_page: int | None = None
     category_name: str | None = None
-    source: str = "app_data"  # or "dom"
+    source: str = "app_data"  # or "next_data" / "dom"
 
 
 def _seller_type(is_b2c: bool, is_dealer: bool) -> str | None:
@@ -422,6 +472,125 @@ def parse_search_app_data(
     return items, meta
 
 
+def _item_from_next_data(raw: dict, *, promoted: bool, source_url: str, page: int, now: datetime) -> dict | None:
+    """One entry of ``searchData.results.listings`` on the Next.js SRP variant.
+
+    Shape seen 2026-09-12: id (int), url, heading, mainHeading ("$950" /
+    "Swap/Trade" / "Free"), mainHeadingInfo ("Negotiable"), description (full
+    text), age, location.text ("Dural, NSW"), media.images[{small, large}],
+    listingDetails [{value: "Used"}], adPosterData, flags.highlighted, featured.
+    """
+    if not isinstance(raw, dict):
+        return None
+    title = str(raw.get("heading") or raw.get("title") or "").strip()
+    price_text = str(raw.get("mainHeading") or raw.get("priceText") or "").strip()
+    if not (price_text.startswith("$") or price_text.lower() in ("free", "swap/trade") or parse_price(price_text) is not None):
+        price_text = ""
+    if not title and not price_text:
+        return None
+    url = raw.get("url") or None
+    listing_id = str(raw.get("id") or id_from_url(url) or "")
+    if not listing_id:
+        return None
+    loc = raw.get("location")
+    loc_text = str(loc.get("text") or "") if isinstance(loc, dict) else str(loc or "")
+    suburb, _, state = (p.strip() for p in loc_text.rpartition(","))
+    if not suburb:
+        suburb, state = state, ""
+    media = raw.get("media")
+    images = (media.get("images") or []) if isinstance(media, dict) else []
+    urls = [i.get("small") or i.get("large") for i in images if isinstance(i, dict) and (i.get("small") or i.get("large"))]
+    poster = raw.get("adPosterData") or {}
+    seller_type = None
+    if isinstance(poster, dict) and poster:
+        if poster.get("carDealer"):
+            seller_type = "dealer"
+        elif poster.get("proseller") or str(poster.get("posterType", "")).upper() in ("BUSINESS", "COMMERCIAL", "PRO"):
+            seller_type = "business"
+    flags = raw.get("flags") if isinstance(raw.get("flags"), dict) else {}
+    snippet = re.sub(r"\s*\n\s*", "\n", str(raw.get("description") or "")).strip()[:500] or None
+    info = str(raw.get("mainHeadingInfo") or "").strip().lower()
+    return build_item(
+        id=listing_id,
+        title=title,
+        price_text=price_text,
+        price_type=None,
+        is_negotiable=info == "negotiable",
+        suburb=suburb or None,
+        area=None,
+        state=state or None,
+        posted_raw=str(raw.get("age") or "").strip() or None,
+        url=url,
+        image_url=urls[0] if urls else None,
+        image_urls=urls[1:3],
+        snippet=snippet,
+        is_wanted=bool(raw.get("isWanted")),
+        is_free=bool(raw.get("isFree")) or price_text.lower() == "free",
+        is_promoted=promoted,
+        is_featured=bool(raw.get("featured")) or bool(flags.get("highlighted")),
+        is_urgent=bool(raw.get("isUrgent")),
+        is_price_drop=bool(raw.get("isPriceDrop")),
+        previous_price_text=None,
+        seller_type=seller_type,
+        source_url=source_url,
+        page=page,
+        now=now,
+    )
+
+
+def parse_search_next_data(
+    next_data: dict, *, source_url: str, page: int = 1, now: datetime | None = None
+) -> tuple[list[dict], SearchMeta]:
+    """Parse the ``__NEXT_DATA__`` blob of Gumtree's Next.js search-page variant.
+
+    Gumtree A/B-serves a second SRP implementation (seen 2026-09-12 on the same
+    URLs that otherwise embed ``window.APP_DATA``): 40 listings per page under
+    ``props.pageProps.searchData.results.listings``, pagination under
+    ``searchData.pager`` (``nextPageUrl`` is "" on the last page, ``numFound``
+    is the total), and ``ssrData.analytics.s.sr[]`` carrying ``t: "ORGANIC"``
+    per listing id (anything else is treated as a promoted placement).
+    """
+    now = now or datetime.now(timezone.utc)
+    props = (next_data.get("props") or {}).get("pageProps") or {}
+    sd = props.get("searchData") or {}
+    results = sd.get("results") or {}
+    listings = results.get("listings") or []
+    top = results.get("topSection")
+    top_rows = top.get("listings") if isinstance(top, dict) else (top if isinstance(top, list) else [])
+    placement: dict[str, str] = {}
+    try:
+        for a in (((props.get("ssrData") or {}).get("analytics") or {}).get("s") or {}).get("sr") or []:
+            if isinstance(a, dict) and a.get("id") is not None:
+                placement[str(a["id"])] = str(a.get("t") or "ORGANIC").upper()
+    except AttributeError:
+        placement = {}
+    items: list[dict] = []
+    for raw in top_rows or []:
+        it = _item_from_next_data(raw, promoted=True, source_url=source_url, page=page, now=now)
+        if it:
+            items.append(it)
+    for raw in listings:
+        promoted = placement.get(str(raw.get("id")), "ORGANIC") != "ORGANIC" if isinstance(raw, dict) else False
+        it = _item_from_next_data(raw, promoted=promoted, source_url=source_url, page=page, now=now)
+        if it:
+            items.append(it)
+    pager = sd.get("pager") or {}
+    next_url = pager.get("nextPageUrl") or None
+    num_found = pager.get("numFound")
+    if num_found is None:
+        num_found = ((sd.get("srpMetaRequest") or {}).get("searchMetadata") or {}).get("numFound")
+    meta = SearchMeta(
+        number_found=num_found,
+        next_page_url=urljoin(BASE_URL, next_url) if next_url else None,
+        is_last_page=bool(pager.get("lastPage", next_url is None)),
+        zero_results=(num_found == 0 and not items),
+        current_page=page,
+        last_page=pager.get("lastPageNum"),
+        source="next_data",
+    )
+    return items, meta
+
+
 def _text(node) -> str:
     return node.get_text(" ", strip=True) if node is not None else ""
 
@@ -501,8 +670,9 @@ def parse_search_page(
     page: int = 1,
     now: datetime | None = None,
     app_data: dict | None = None,
+    next_data: dict | None = None,
 ) -> tuple[list[dict], SearchMeta]:
-    """Parse one search-results page, preferring APP_DATA, falling back to the DOM.
+    """Parse one search-results page: APP_DATA, then __NEXT_DATA__, then the rendered DOM.
 
     Raises SelectorsMatchedNothing when the page is not a genuine empty search
     yet yields no listing. Callers must treat that as a failure, not as data.
@@ -515,6 +685,12 @@ def parse_search_page(
     if isinstance(search, dict) and search.get("results") is not None:
         items, meta = parse_search_app_data(search, source_url=source_url, page=page, now=now)
     if not items and not meta.zero_results:
+        nd = next_data if next_data is not None else extract_next_data(html)
+        if isinstance(nd, dict) and ((nd.get("props") or {}).get("pageProps") or {}).get("searchData"):
+            nd_items, nd_meta = parse_search_next_data(nd, source_url=source_url, page=page, now=now)
+            if nd_items or nd_meta.zero_results:
+                items, meta = nd_items, nd_meta
+    if not items and not meta.zero_results:
         dom_items, dom_meta = parse_search_dom(html, source_url=source_url, page=page, now=now)
         if dom_items:
             items, meta = dom_items, dom_meta
@@ -523,7 +699,7 @@ def parse_search_page(
     if not items and not meta.zero_results:
         raise SelectorsMatchedNothing(
             f"Page loaded ({len(html or '')} bytes, gumtree={looks_like_gumtree(None, html)}) "
-            f"but neither APP_DATA nor '{CARD_SELECTOR}' produced a listing: {source_url}"
+            f"but neither APP_DATA, __NEXT_DATA__ nor '{CARD_SELECTOR}' produced a listing: {source_url}"
         )
     return items, meta
 
