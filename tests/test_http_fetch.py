@@ -81,8 +81,9 @@ RATE_LIMITED = FakeResponse(429, "", {})
 
 
 class FakeSession:
-    def __init__(self, transport: "FakeTransport", profile: str, http_version: str, proxy_url: str | None):
+    def __init__(self, transport: "FakeTransport", profile: str, http_version: str, proxy_url: str | None, cookies=None):
         self.transport = transport
+        self.cookies = cookies
         self.profile = profile
         self.http_version = http_version
         self.proxy_url = proxy_url
@@ -114,8 +115,8 @@ class FakeTransport:
         self.sleeps: list[float] = []
         self.proxy_sessions: list[str] = []
 
-    def factory(self, profile, http_version, proxy_url, timeout):
-        s = FakeSession(self, profile, http_version, proxy_url)
+    def factory(self, profile, http_version, proxy_url, timeout, cookies=None):
+        s = FakeSession(self, profile, http_version, proxy_url, cookies)
         self.sessions.append(s)
         return s
 

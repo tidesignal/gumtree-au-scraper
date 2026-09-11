@@ -67,6 +67,7 @@ or
 - **includeDescription**: opens every listing page (one extra page load per row).
 - **fetchMode**: `auto` (default), `http` or `browser`. See "Fetch modes" below.
 - **proxyConfiguration**: see "Proxies" below.
+- **httpProfiles** (advanced): override the ladder of browser fingerprints the HTTP client impersonates, e.g. `["safari18_0", "chrome124/http1.1"]`.
 
 ## Output example
 
@@ -123,11 +124,19 @@ By default no browser is involved. A plain HTTP client (`curl_cffi`) that presen
 
 | `fetchMode` | What happens | When to use |
 | --- | --- | --- |
-| `auto` (default) | HTTP client first. If it is blocked on two pages in a row after all retries, the remaining pages are fetched with headless Chromium instead. | Always, unless you are debugging. |
-| `http` | HTTP client only (`curl_cffi`, browser fingerprint impersonation). No Chromium: roughly 10x cheaper in compute and proxy traffic than a browser, and a page takes well under a second. | Cheapest runs; scheduled monitoring. |
-| `browser` | Headless Chromium (Playwright) for every page, with fingerprint injection and session rotation. Slower and about 1 GB of memory. | Only if `http` stops working after a change on Gumtree's side. |
+| `auto` (default) | One plain-HTTP attempt. If Gumtree answers with its JavaScript challenge, headless Chromium loads that same page, solves the challenge and parses it; the browser's cookies are then offered to the HTTP client once, and if Gumtree challenges them again (it does, see below) the rest of the run stays in the browser. | Always, unless you are debugging. |
+| `http` | HTTP client only (`curl_cffi`, browser fingerprint impersonation). No Chromium: a page takes well under a second and costs a few hundred KB. Fails on pages that demand the challenge. | Connections Gumtree trusts (a home line in Australia); scheduled runs where you know HTTP works. |
+| `browser` | Headless Chromium (Playwright) for every page. A new session is challenged once (about a second); about 1 GB of memory. | Through proxies; or if `http` stops working after a change on Gumtree's side. |
 
-Why HTTP beats a browser here: gumtree.com.au's bot mitigation (Peakhour) fingerprints the *client*, not the IP. Measured on 2026-09-12: headless Chromium got HTTP 403 on every request through ten Apify residential AU proxy sessions, while `curl_cffi` impersonating Safari 18 / Chrome 124 got the page on the first try from the same kind of connection. The HTTP client tries a short ladder of fingerprint profiles (`safari18_0` over HTTP/2, `chrome124` over HTTP/1.1, `chrome120`, `safari15_5`) and moves to the next one, with a fresh proxy session and cookie jar, whenever a response is a Peakhour challenge (`peakhour-challenge: 1`, an obfuscated JavaScript page), a hard block (`peakhour-error: blocked`, empty body) or a 429.
+### What Gumtree's bot mitigation does, and how each mode deals with it
+
+gumtree.com.au sits behind Peakhour. What it answers depends on the *client fingerprint* and the *IP reputation* (all measured 2026-09-12):
+
+- From a Sydney residential IP, plain `curl_cffi` requests impersonating Safari 18 / Chrome 124 / Chrome 120 get the page straight away, while the newest Chrome profiles and headless Chromium are refused. The HTTP client therefore tries a ladder of fingerprint profiles (`safari18_0` over HTTP/2, `chrome124` over HTTP/1.1, `chrome120`, `safari15_5`), rotating profile, cookie jar and proxy session whenever a response is a challenge (`peakhour-challenge: 1`), a hard block (`peakhour-error: blocked`, empty body) or a 429.
+- Through Apify residential proxies (country AU), every one of those profiles gets the **JavaScript challenge** instead: a 31 KB obfuscated page that computes a proof-of-work, fingerprints the browser (WebGL, canvas, navigator) and POSTs the answer back. Only a real browser can answer it. Headless Chromium does, in 0.6-1 s, provided its client hints are consistent with its binary (the scraper overrides the `HeadlessChrome` marker via CDP; with the stock headless UA Peakhour does not even offer the challenge). A 403 is therefore *not* treated as a failure in the browser: the page is given up to 20 s to turn into real content, and only then judged.
+- The cookie a browser earns (`__rp_ch`) is bound to the TLS fingerprint that solved the challenge and to the page: handing it, together with the browser's exact User-Agent, to `curl_cffi` was challenged again on the very next request in every test. Inside the browser the cookie does carry: after one solved challenge the following pages of the same session (page 2, listing pages) loaded without a new one. `auto` still makes that one-request HTTP attempt in case the binding changes, then stays in the browser.
+
+Practical consequence: **on the Apify platform expect the browser to do the work** (about a second per page plus Chromium's memory); from a trusted connection the HTTP path does it for a fraction of the cost. The log says which happened (`Page 1 (app_data, http safari18_0/h2 ...)` vs `Peakhour challenge solved in the browser` and `Page 1 (app_data, browser, HTTP 403) ...`).
 
 Selectors and data sources verified on 2026-09-11 against live pages ("rtx 4070", "exercise bike" in Sydney Region, the Components category, and a Wanted-only category page):
 
@@ -151,6 +160,9 @@ What was measured (2026-09-12, Sydney residential connection, fresh session per 
 | Headless Chromium (Playwright), also via Apify residential AU proxy | HTTP 403 on every request |
 | `curl_cffi` impersonating Chrome 146 / 136 / 131, Edge, Firefox, Safari 26 | HTTP 403 with a Peakhour JavaScript challenge or an empty "blocked" body |
 | `curl_cffi` impersonating Safari 18.0 (HTTP/2 or HTTP/1.1), Chrome 124 (HTTP/1.1 only), Chrome 120, Safari 15.5 | HTTP 200, real page with listing data |
+| Any of the above through an Apify residential AU proxy (platform run, same day) | HTTP 403 with the JavaScript challenge, every profile |
+| Headless Chromium with consistent client hints, no proxy | Challenge served and solved in 0.6-1 s, real page follows |
+| Headless Chromium with consistent client hints, through the proxy | Not yet measured (no proxy available locally); expected to be served the challenge and to solve it |
 
 Peakhour's fingerprint database moves; if every profile on the ladder starts failing, the run reports it (see "Why did my run fail" below) and `fetchMode: "browser"` is the stop-gap while the ladder is updated.
 
@@ -162,7 +174,7 @@ Keeping a first run cheap:
 
 - `maxItems` defaults to **24** (one page). A default run costs one Actor start plus 24 results plus about 0.5 MB of residential proxy traffic.
 - Set a **maximum cost per run** in the run options (Console: *Run options -> Max cost per run*; API: `maxTotalChargeUsd`). The platform stops the run when the cap is reached, whatever the input says; `$0.10` is plenty for a 24-item test and `$1` covers roughly 500 listings. The scraper itself does not need to know the cap.
-- `fetchMode: "http"` (or the default `auto`, which is HTTP unless blocked) uses no browser, so compute is a few seconds per run instead of a Chromium process for the whole run.
+- `fetchMode: "http"` (or the default `auto`, which is HTTP unless challenged) uses no browser, so compute is a few seconds per run instead of a Chromium process for the whole run. Through a proxy the browser normally takes over (see "Fetch modes"); it loads pages one at a time, blocks images/fonts/media to keep proxy traffic down, and needs about a second per challenge (one per browser session).
 
 ## FAQ
 
@@ -174,7 +186,7 @@ Keeping a first run cheap:
 
 **Does it get phone numbers or seller names?** No. It reads what is on the public listing card, plus the public description and condition when `includeDescription` is on. The seller's name, profile, phone and exact coordinates are never extracted.
 
-**Why did my run fail with "0 listings scraped"?** Every page was blocked or unparseable. The log says which: "blocked response(s) from bot mitigation" means every fingerprint profile on the HTTP ladder (and, in `auto` mode, the browser too) was refused; check the proxy setting (residential, AU) first, then try `fetchMode: "browser"`. "No listing matched the selectors" means Gumtree changed its page and the parser needs an update; open an issue with the search URL.
+**Why did my run fail with "0 listings scraped"?** Every page was blocked or unparseable. The log says which: "blocked response(s) from bot mitigation" means the HTTP profiles were refused and the browser could not solve the challenge either (`challenge not solved` in the log means the challenge page stayed a challenge page for 20 s; `challenge not offered` means Peakhour hard-blocked the browser without one); check the proxy setting (residential, AU) first. "No listing matched the selectors" means Gumtree changed its page and the parser needs an update; open an issue with the search URL.
 
 **Gumtree UK / NZ / South Africa?** Not supported; those are different sites with different markup.
 

@@ -89,7 +89,7 @@
     "fetchMode": {
       "title": "Fetch mode",
       "type": "string",
-      "description": "How pages are fetched. `auto` (default) uses the plain HTTP client first and switches to the headless browser only if the HTTP client is blocked on two pages in a row. `http` is HTTP only: a curl-based client that presents the TLS/HTTP fingerprint of a real browser (curl_cffi), no Chromium, about 10x cheaper and faster. `browser` forces headless Chromium (Playwright) for every page; use it only if `http` stops working.",
+      "description": "How pages are fetched. `auto` (default): one plain-HTTP attempt (curl_cffi, browser TLS impersonation); if Gumtree's bot mitigation (Peakhour) answers with its JavaScript challenge, headless Chromium solves the challenge for that page, its session is offered to the HTTP client once, and the run stays in the browser if that is refused. `http`: HTTP only, no Chromium, cheapest; fails on pages that demand the challenge. `browser`: headless Chromium for every page (the challenge is solved on each new session).",
       "editor": "select",
       "enum": [
         "auto",
@@ -97,7 +97,7 @@
         "browser"
       ],
       "enumTitles": [
-        "Auto (HTTP first, browser fallback)",
+        "Auto (HTTP first, browser solves the challenge)",
         "HTTP only (curl_cffi)",
         "Browser only (Playwright)"
       ],
@@ -132,6 +132,13 @@
       "minimum": 0,
       "maximum": 10,
       "sectionCaption": "Advanced"
+    },
+    "httpProfiles": {
+      "title": "HTTP fingerprint profiles",
+      "type": "array",
+      "description": "Advanced. Override the built-in ladder of curl_cffi impersonation profiles tried by the HTTP client, in order, as `profile` or `profile/http1.1` (default HTTP/2). Built-in ladder: `safari18_0`, `chrome124/http1.1`, `chrome120`, `safari15_5`. Use `chrome` (the newest Chrome profile, which Peakhour challenges) to force the browser fallback for testing.",
+      "editor": "stringList",
+      "prefill": []
     },
     "requestDelaySecs": {
       "title": "Delay between page loads (seconds)",
